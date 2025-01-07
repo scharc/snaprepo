@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "snaprepo"
-version = "0.1.1"
+version = "0.2.0"
 description = "Format your code for AI tools like ChatGPT and Claude"
 authors = ["Marc Schütze <scharc@gmail.com>"]
 readme = "README.md"
