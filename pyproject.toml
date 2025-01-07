@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "snaprepo"
+version = "0.1.1"
+description = "Format your code for AI tools like ChatGPT and Claude"
+authors = ["Marc Schütze <scharc@gmail.com>"]
+readme = "README.md"
+packages = [{include = "snaprepo"}]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+click = "^8.1.7"
+chardet = "^5.2.0"
+tiktoken = "^0.5.2"
+rich = "^13.7.0"
+pyperclip = "^1.9.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+snaprepo = "snaprepo.main:main"
