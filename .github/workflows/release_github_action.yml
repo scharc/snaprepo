@@ -33,7 +33,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          poetry install --no-dev
+          poetry install
 
       - name: Build binary with PyInstaller
         run: |
