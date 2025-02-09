@@ -35,26 +35,41 @@ class snaprepo:
         self.binary_extensions = config.BINARY_EXTENSIONS
         self.extension_map = config.EXTENSION_MAP
         self.stats = dict(config.DEFAULT_STATS)  # Make a copy to avoid sharing
+        self._ignored_dirs = set()  # Add this line
+        self.debug = False  # Add this line
 
     def initialize(self) -> None:
         """Initialize ignore patterns from .gitignore if it exists"""
+        from rich import print as rprint
+
         # Add default patterns
+        rprint("\n[yellow]Loading default ignore patterns:[/]")
         self.ignore_patterns.extend(config.DEFAULT_IGNORE_PATTERNS)
+        for pattern in config.DEFAULT_IGNORE_PATTERNS:
+            rprint(f"[cyan]Added default pattern:[/] {pattern}")
 
         # Read .gitignore if it exists
         gitignore_path = self.project_path / ".gitignore"
         if gitignore_path.exists():
-            rprint(f"[blue].gitignore found. Loading patterns...[/]")
+            rprint(f"\n[yellow].gitignore found at:[/] {gitignore_path}")
             with open(gitignore_path, "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if line and not line.startswith("#"):
                         if line.startswith("!"):  # Handle negative patterns
+                            rprint(f"[yellow]Skipping negative pattern:[/] {line}")
                             continue
                         if line.startswith("./"):  # Normalize pattern
                             line = line[2:]
                         self.ignore_patterns.append(line)
-            
+                        rprint(f"[cyan]Added .gitignore pattern:[/] {line}")
+                    elif line.startswith("#"):
+                        rprint(f"[dim]Skipping comment:[/] {line}")
+
+        rprint(f"\n[green]Total patterns loaded:[/] {len(self.ignore_patterns)}")
+        rprint("\n[yellow]Active ignore patterns:[/]")
+        for pattern in self.ignore_patterns:
+            rprint(f"  • {pattern}")
 
     def is_template(self, path: Path) -> tuple[bool, str]:
         """Check if a file is a template and return its content"""
@@ -70,11 +85,24 @@ class snaprepo:
         return False, ""
 
     def should_ignore(self, file_path: Path) -> bool:
-        """Check if a file or directory should be ignored based on patterns, with debug output."""
+        """Check if a file or directory should be ignored based on patterns."""
+        from rich import print as rprint
+
         rel_path = str(file_path.relative_to(self.project_path))
 
-        # Debug: Show the relative path being processed
-        
+        # First check if any parent directory is already known to be ignored
+        parent = file_path.parent
+        while parent != self.project_path:
+            parent_path = str(parent.relative_to(self.project_path))
+            if parent_path in self._ignored_dirs:
+                if file_path.is_dir():
+                    if self.debug:
+                        rprint(f"Parent directory already ignored: {parent_path}")
+                return True
+            parent = parent.parent
+
+        if self.debug:
+            rprint(f"\nChecking path: {rel_path}")
 
         # If this is the output file, ignore it
         if self.output_file and file_path.resolve() == self.output_file:
@@ -83,34 +111,45 @@ class snaprepo:
         # Check if the file should be redacted
         is_redacted, redaction_msg = self.is_redacted(file_path)
         if is_redacted:
-            return False  # Redacted files are included but marked as redacted
-        
-        # Check skip_files patterns
-        for pattern in self.skip_files:
-            if fnmatch.fnmatch(rel_path, pattern):
-                return True
+            return False
 
-        # Check if the file or any of its parent directories match the ignore patterns
+        # Convert path to parts for precise matching
+        path_parts = rel_path.split("/")
+
+        # Check each pattern
         for pattern in self.ignore_patterns:
-            # Match directories explicitly
-            if pattern.endswith("/"):
-                # Ignore the directory itself and all files within it
-                if fnmatch.fnmatch(rel_path + "/", pattern):  # Directory pattern
-                    return True
+            if not pattern or pattern.startswith("#"):
+                continue
 
-            # Match files directly
-            if fnmatch.fnmatch(rel_path, pattern):
-                return True
+            # Clean up the pattern
+            pattern = pattern.rstrip("/")
 
-            # Match parent directories
-            parent_rel_path = rel_path
-            while "/" in parent_rel_path:  # Check all parent directories
-                parent_rel_path = str(Path(parent_rel_path).parent)
-                if fnmatch.fnmatch(parent_rel_path + "/", pattern):
+            if self.debug:
+                rprint(f"Testing '{rel_path}' against pattern: '{pattern}'")
+
+            # Handle glob patterns
+            if pattern.startswith("*"):
+                if fnmatch.fnmatch(file_path.name, pattern):
+                    if self.debug:
+                        rprint(f"Glob match: {file_path.name} matches {pattern}")
                     return True
+            # Handle directory/file patterns
+            else:
+                # Split pattern into parts
+                pattern_parts = pattern.split("/")
+
+                # Match exact directory/file names
+                for i in range(len(path_parts) - len(pattern_parts) + 1):
+                    if path_parts[i : i + len(pattern_parts)] == pattern_parts:
+                        if self.debug:
+                            rprint(
+                                f"Path match: {'/'.join(path_parts[i:i+len(pattern_parts)])} matches {pattern}"
+                            )
+                        if file_path.is_dir():
+                            self._ignored_dirs.add(rel_path)
+                        return True
 
         return False
-
 
     def is_sensitive_file(self, path: Path) -> bool:
         """Check if a file matches sensitive file patterns"""
